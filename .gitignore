@@ -1,0 +1,4 @@
+# ignore the access_vault_reports directory and all files within it
+access_vault_reports
+# ignore .reports_path.txt (different for each user)
+.reports_path.txt
