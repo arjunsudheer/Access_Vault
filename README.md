@@ -1,14 +1,14 @@
 # Access Vault
 
-Access Vault is a tool meant to help organizations easily manage file and user permissions. This helps organizations follow the principle of least priviledge. The principle of least priviledge states that authorization and access to documents and assets should only be given to those that need permission.
+Access Vault is a tool meant to help organizations easily manage file and user permissions. This helps organizations follow the principle of least privilege. The principle of least privilege states that authorization and access to documents and assets should only be given to those that need permission.
 
 ## Installation Guide 
 
-This section will talk about how to install the neccessary componenets and get the access vault up and running on your system.
+This section will talk about how to install the necessary components and get the access vault up and running on your system.
 
 ### Bash Installation Guide
 
-These access vault use the Bash shell. The curent supported Bash version is Bash 3. 
+These access vault use the Bash shell.
 
 #### Mac Users
 
@@ -44,7 +44,7 @@ Your default shell should already be bash. You can verify this by running the fo
 
 If the path printed points towards bash, then you are good to go. If not, then please change your default shell to bash by following the appropriate steps for your Linux distribution.
 
-### Dowloading access vault to your device
+### Downloading access vault to your device
 
 In order to download the access vault, we recommend that you download the zip file of the access vault bash script onto your computer.
 
