@@ -12,7 +12,7 @@ manageFiles() {
     IFS=","
     while read -r absoluteFilePath fileOwner userAccess groupAccess otherAccess; do
         # check file ownership (3rd field in ls -l command)
-        username=$(ls -l $1 | awk '{print $3}')
+        local username=$(ls -l $1 | awk '{print $3}')
         if [[ $fileOwner != $username ]]; then
             chown $fileOwner $absoluteFilePath
             echo "Changed owner of $absoluteFilePath to $fileOwner" >> $fileUpdateReport
@@ -24,6 +24,8 @@ manageFiles() {
         # check other access
         changeFilePermissions $absoluteFilePath $otherAccess "other" "o" 2 $fileUpdateReport
     done < <(tail -n +2 $1)
+
+    echo "Finished updating file permissions."
 
     setupReports $1 "files" $fileUpdateReport
 }
@@ -58,13 +60,13 @@ changeFilePermissions() {
     if [[ "$2" == *"w"* ]]; then
         # pipe the ls -l command to the cut command to check for lack of write permissions
         if [[ $(ls -l $1 | cut -c $(( $5 * 3 + 3 ))-$(( $5 * 3 + 3 ))) == "-" ]]; then
-            chmod $4+r $1
+            chmod $4+w $1
             echo "Added write access to $3 for $1" >> $6
         fi
     else
         # pipe the ls -l command to the cut command to check for write permissions
         if [[ $(ls -l $1 | cut -c $(( $5 * 3 + 3 ))-$(( $5 * 3 + 3 ))) == "w" ]]; then
-            chmod $4-r $1
+            chmod $4-w $1
             echo "Removed write access from $3 for $1" >> $6
         fi
     fi
@@ -73,13 +75,13 @@ changeFilePermissions() {
     if [[ "$2" == *"x"* ]]; then
         # pipe the ls -l command to the cut command to check for lack of execute permissions
         if [[ $(ls -l $1 | cut -c $(( $5 * 3 + 4 ))-$(( $5 * 3 + 4 ))) == "-" ]]; then
-            chmod $4+r $1
+            chmod $4+x $1
             echo "Added execute access to $3 for $1" >> $6
         fi
     else
         # pipe the ls -l command to the cut command to check for execute permissions
         if [[ $(ls -l $1 | cut -c $(( $5 * 3 + 4 ))-$(( $5 * 3 + 4 ))) == "x" ]]; then
-            chmod $4-r $1
+            chmod $4-x $1
             echo "Removed execute access from $3 for $1" >> $6
         fi
     fi
@@ -93,10 +95,88 @@ manageUsers() {
         exit
     fi
 
-    userReport="user_report_$(date +"%H:%M:%S").txt"
-    echo "$(whoami) ran this script to update user permissions on $(date "+%m-%d-%Y at %H:%M:%S")" >> $userReport
+    local userUpdateReport="user_report_$(date +"%H:%M:%S").txt"
+    echo "$(whoami) ran this script to update user permissions on $(date "+%m-%d-%Y at %H:%M:%S")" >> $userUpdateReport
 
-    setupReports $1 "users" $userReport
+    IFS=","
+    while read -r username primaryGroup otherGroups homeDirectory lockAccount; do
+        # check if the user exists
+        if [[ $(id -u $username) ]]; then
+            # check if the user's primary group has changed
+            if [[ $(id -gn $username) != $primaryGroup ]]; then
+                $(usermod -g $primaryGroup $username)
+                echo "Changed $username primary group to: $primaryGroup" >> $userUpdateReport
+            fi
+
+            # check if the user's other groups have changed
+            declare -a currentOtherGroups
+            currentOtherGroups=$(id -Gn $username)
+            addNewGroup=true
+            # check if there are any new other groups that need to be added
+            for otherGroupAdd in $otherGroupsAdd; do
+                for currentOtherGroupAdd in $currentOtherGroupsAdd; do
+                    if [[ $currentOtherGroupAdd == $otherGroupAdd ]]; then
+                        addNewGroup=false
+                        break
+                    fi
+                done
+                if [[ $addNewGroup ]]; then
+                    usermod -a -G $otherGroupAdd $username
+                    echo "Added $username to other group: $otherGroupAdd" >> $userUpdateReport
+                fi
+                addNewGroup=true
+            done
+
+            currentOtherGroups=$(id -Gn $username)
+            removeNewGroup=true
+            # check if there are any existing other groups that need to be removed
+            # remove the user from all other groups so the desired ones can be manually added back
+            usermod -G "" $username
+            for currentOtherGroup in $currentOtherGroups; do
+                for otherGroup in $otherGroups; do
+                    if [[ $currentOtherGroup == $otherGroup ]]; then
+                        removeNewGroup=false
+                        break;
+                    fi
+                done
+                if [[ $removeNewGroup ]]; then
+                    echo "Removed $username from other group: $otherGroupAdd" >> $userUpdateReport
+                else
+                    usermod -a -G $otherGroup $username
+                fi
+                removeNewGroup=true
+            done
+
+            # check if the user's home directory has changed
+            if [[ $(~$username) != $homeDirectory]]; then
+                $(usermod -d $homeDirectory $username)
+                echo "Changed $username home directory to: $homeDirectory" >> $userUpdateReport
+            fi
+        else
+            # add the user with the specified home directory
+            useradd -d $homeDirectory $username
+            echo "Added user: $username with home directory: $homeDirectory" >> $userUpdateReport
+            # add the primary group to the user
+            usermod -g $primaryGroup $username
+            echo "Added $username to primary group: $primaryGroup" >> $userUpdateReport
+            for group in $otherGroups; do
+                # add all specified other groups to the user
+                usermod -a -G $group $username
+                echo "Added $username to other group: $group" >> $userUpdateReport
+            done
+            if [[ $lockAccount == "N" ]]; then
+                usermod -U $username
+                echo "Unlocked $username account" >> $userUpdateReport
+            else
+                usermod -L $username
+                echo "Locked $username account" >> $userUpdateReport
+            fi
+        fi
+    done < <(tail -n +2 $1)
+
+    echo "Finished updating user permissions."
+
+    setupReports $1 "users" $userUpdateReport
 }
 
 setupReports() {
@@ -148,11 +228,23 @@ setupReports() {
 
     # don't give write access to anyone so that the access_vault_reports directory and subdirectores/files cannot be deleted or modified
     chmod u=rx,g=rx,o= $reportsDirectory $dayReports $timeReports $timeReports/$report $timeReports/$reportType.csv.bak
+
+    echo "Finished generating $reportType reports."
 }
 
 
+filePermissionsSetup() {
+    read -r -p "Please enter the abolute path of the csv file you want to use for the file permissions update: " csvPathFile
+    manageFiles $csvPathFile
+}
+
+userPermissionsSetup() {
+    read -r -p "Please enter the abolute path of the csv file you want to use for the user permissions update: " csvPathUser
+    manageUsers $csvPathUser
+}
+
 # cd to the directory where this script is located in
-cd $(dirname "$(realpath $0)")
+# cd $(dirname "$(realpath $0)")
 
 IFS=""
 
@@ -163,18 +255,14 @@ PS3="What do you want to update (type the name of the command or the associated 
 select permissionType in ${permissionOptions[@]}; do
     case $permissionType in
         1|"Update File Permissions")
-            read -r -p "Please enter the abolute path of the csv file you want to use for the file permissions update: " csvPathFile
-            manageFiles $csvPathFile
+            filePermissionsSetup
             ;;
         2|"Update User Permissions")
-            read -r -p "Please enter the abolute path of the csv file you want to use for the user permissions update: " csvPathUser
-            manageUsers $csvPathUser
+            userPermissionsSetup
             ;;
         3|"Update File and User Permissions")
-            read -r -p "Please enter the abolute path of the csv file you want to use for the file permissions update: " csvPathFile
-            manageFiles $csvPathFile
-            read -r -p "Please enter the abolute path of the csv file you want to use for the user permissions update: " csvPathUser
-            manageUsers $csvPathUser
+            filePermissionsSetup
+            userPermissionsSetup
             ;;
         4|"Exit")
             exit

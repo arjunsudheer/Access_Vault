@@ -8,7 +8,7 @@ This section will talk about how to install the necessary components and get the
 
 ### Bash Installation Guide
 
-These access vault use the Bash shell.
+Access vault use the Bash shell.
 
 #### Mac Users
 
